@@ -336,6 +336,7 @@
     const organStates = ORGANS.map((organ) => {
       const group = new THREE.Group();
       group.position.set(0, 0, 0.32);
+      group.visible = false;
 
       const callouts = organ.annotations.map((item) => {
         const line = document.createElementNS(svgNS, 'polyline');
@@ -533,7 +534,7 @@
           mindarThree = new MindARThree({
             container: arContainer,
             imageTargetSrc: mindUrl,
-            maxTrack: 3,
+            maxTrack: 1,
             filterMinCF: 0.005,
             filterBeta: 0.05,
             warmupTolerance: 1,
@@ -556,12 +557,21 @@
             const anchor = mindarThree.addAnchor(st.organ.index);
             anchor.group.add(st.group);
             anchor.onTargetFound = () => {
+              organStates.forEach((other) => {
+                if (other !== st) {
+                  other.found = false;
+                  other.group.visible = false;
+                }
+              });
               st.found = true;
+              st.group.visible = true;
               st.popProgress = 0;
+              infoCard.classList.add('hidden');
               refreshStatusBanner();
             };
             anchor.onTargetLost = () => {
               st.found = false;
+              st.group.visible = false;
               refreshStatusBanner();
             };
           });
