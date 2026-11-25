@@ -15,7 +15,7 @@ import { soundEngine } from './sound-engine.js';
  * interactive story cards, myth-buster strips, flashcards, speed-match game, and quiz.
  */
 
-const STORAGE_KEY = 'digestive_holo_progress_v1';
+const STORAGE_KEY = 'digestive_holo_progress_v2';
 
 const TABS = [
   { id: 'anatomy', label: 'กายวิภาค', icon: ICONS.anatomy },
@@ -36,40 +36,84 @@ const ENZYME_FILTERS = [
   { id: 'carb', label: 'คาร์บฯ' },
   { id: 'lipid', label: 'ไขมัน' },
   { id: 'nucleic', label: 'DNA/RNA' },
-  { id: 'activator', label: 'ฮอร์โมน/กรด' },
+  { id: 'activator', label: 'สารเสริม/ฮอร์โมน' },
 ];
 
-/* Crisp scannable 1-line comparison rows (zero wall-of-text!) */
+/* Crisp scannable 1-line comparison rows covering all 5 organs (zero wall-of-text!) */
 const QUICK_COMPARE = [
-  { label: 'ค่า pH', stomach: '1.5–2.5 (กรด)', pancreas: '7.5–8.5 (ด่าง)', intestine: '7.0–8.0 (กลาง)' },
-  { label: 'อาหารผ่าน?', stomach: '✅ ผ่านตรง', pancreas: '❌ ส่งแค่น้ำย่อย', intestine: '✅ ผ่านตรง' },
-  { label: 'ย่อยหลัก', stomach: 'โปรตีน', pancreas: 'ครบ 4 หมู่', intestine: 'ย่อยจบ 3 หมู่' },
-  { label: 'ดูดซึม', stomach: 'น้อยมาก', pancreas: 'ไม่มี', intestine: '⭐ หลัก >90%' },
-  { label: 'ฮอร์โมน', stomach: 'Gastrin', pancreas: 'Insulin/Glucagon', intestine: 'Secretin / CCK' },
-  { label: 'ตัวปลุกเอนไซม์', stomach: 'กรด HCl', pancreas: 'Trypsin', intestine: 'Enterokinase' },
+  {
+    label: 'ค่า pH',
+    mouth: '6.5–7.0 (กลาง)',
+    stomach: '1.5–2.5 (กรด)',
+    liver: '7.6–8.6 (น้ำดี)',
+    pancreas: '7.5–8.5 (ด่าง)',
+    intestine: '7.0–8.0 (กลาง)',
+  },
+  {
+    label: 'อาหารผ่าน?',
+    mouth: '✅ ผ่านตรง',
+    stomach: '✅ ผ่านตรง',
+    liver: '❌ ส่งแค่น้ำดี',
+    pancreas: '❌ ส่งแค่น้ำย่อย',
+    intestine: '✅ ผ่านตรง',
+  },
+  {
+    label: 'หน้าที่เด่น',
+    mouth: 'เคี้ยว + ย่อยแป้ง',
+    stomach: 'ย่อยโปรตีน',
+    liver: 'สร้างน้ำดีตีไขมัน',
+    pancreas: 'ย่อยครบ 4 หมู่',
+    intestine: 'ย่อยจบ 3 หมู่',
+  },
+  {
+    label: 'คีย์บนการ์ด',
+    mouth: 'อะไมเลส',
+    stomach: 'เพปซิโนเจน/เพปซิน',
+    liver: 'น้ำดี → ถุงน้ำดี',
+    pancreas: 'เอนไซม์ 8 ชนิด',
+    intestine: '6 เอนไซม์ 3 กลุ่ม',
+  },
+  {
+    label: 'ดูดซึม',
+    mouth: 'แทบไม่มี',
+    stomach: 'น้อยมาก',
+    liver: 'รับเลือดคัดกรอง',
+    pancreas: 'ไม่มี',
+    intestine: '⭐ หลัก >90%',
+  },
+  {
+    label: 'ตัวควบคุม',
+    mouth: 'ประสาทอัตโนมัติ',
+    stomach: 'Gastrin / HCl',
+    liver: 'CCK บีบถุงน้ำดี',
+    pancreas: 'Secretin / CCK',
+    intestine: 'Enterokinase',
+  },
 ];
 
 /* Bite-sized ❌ Myth vs ✅ Truth cards for exam prep */
 const QUICK_MYTHS = [
-  { wrong: 'น้ำดีเป็นเอนไซม์ย่อยไขมัน', right: 'น้ำดีไม่ใช่เอนไซม์! แค่ตีไขมันให้แตกเป็นหยดเล็ก ให้ Lipase ย่อย' },
-  { wrong: 'อาหารไหลเข้าไปในตับอ่อน', right: 'อาหารไม่เคยเข้าตับอ่อน! ตับอ่อนส่งน้ำย่อยผ่านท่อลงลำไส้เล็ก' },
+  { wrong: 'น้ำดีสร้างจากถุงน้ำดีและเป็นเอนไซม์', right: 'ตับสร้างน้ำดี (ถุงน้ำดีแค่เก็บ) และไม่ใช่เอนไซม์! แค่ตีไขมันเป็นหยดเล็ก' },
+  { wrong: 'ในปากย่อยเคมีได้ทั้งแป้งและโปรตีน', right: 'ในปากย่อยเคมีเฉพาะ "แป้ง → มอลโทส" ด้วยอะไมเลส! โปรตีนเริ่มที่กระเพาะ' },
+  { wrong: 'อาหารไหลเข้าไปในตับและตับอ่อน', right: 'อาหารไม่เคยเข้าตับ/ตับอ่อน! ทั้งคู่ส่งน้ำดีและน้ำย่อยผ่านท่อลงลำไส้เล็ก' },
   { wrong: 'เพปซินย่อยโปรตีนได้กรดอะมิโน', right: 'เพปซินย่อยได้แค่สายสั้น ต้องรอ Dipeptidase ในลำไส้เล็กปิดจ๊อบ' },
   { wrong: 'ไขมันดูดซึมเข้าเส้นเลือดฝอย', right: 'ไขมัน + วิตามิน A,D,E,K เข้า "หลอดน้ำเหลือง (Lacteal)" ในวิลไล' },
   { wrong: 'จำ 3 น้ำตาลสลับกันประจำ', right: 'มอลโทส=กลู+กลู | ซูโครส=กลู+ฟรัก | แล็กโทส=กลู+กาแล็ก' },
 ];
 
-/* Ultra-short 1-line journey headlines */
+/* Ultra-short 1-line journey headlines (7 stages, 5 linked to 3D AR cards) */
 const JOURNEY_SHORT = [
-  'เคี้ยว + Amylase เริ่มย่อยแป้ง',
+  'เคี้ยว + Amylase เริ่มย่อยแป้ง → มอลโทส',
   'บีบคลื่น Peristalsis ส่งลงกระเพาะ',
   'กรด HCl + Pepsin ย่อยโปรตีน',
-  'ส่งน้ำดี + น้ำย่อย 8 ชนิด + NaHCO₃',
+  'ตับสร้างน้ำดี เก็บที่ถุงน้ำดี ช่วยตีไขมัน',
+  'ส่ง NaHCO₃ + เอนไซม์ 8 ชนิดครบ 4 หมู่',
   'ย่อยขั้นท้าย + ดูดซึม >90% ผ่านวิลไล',
   'ดูดน้ำกลับ + แบคทีเรียสร้างวิตามิน K',
 ];
 
 const BADGE_DEFS = [
-  { id: 'explorer', icon: '🔭', title: 'ครบ 3 อวัยวะ', desc: 'สำรวจครบทุกอวัยวะ', check: (p) => p.discoveredOrgans.length >= 3 },
+  { id: 'explorer', icon: '🔭', title: 'ครบ 5 อวัยวะ', desc: 'สำรวจครบทั้ง 5 อวัยวะ', check: (p) => p.discoveredOrgans.length >= ORGANS.length },
   { id: 'anatomist', icon: '📍', title: 'เจาะ 5 จุดชี้', desc: 'แตะดูป้ายชี้ 5 จุด', check: (p) => p.readAnnotations.length >= 5 },
   { id: 'memory', icon: '🧠', title: 'เซียนแฟลชการ์ด', desc: 'จำได้ 6+ ใบ', check: (p) => p.masteredFlashcards.length >= 6 },
   { id: 'matcher', icon: '⚡', title: 'แชมป์จับคู่', desc: 'เคลียร์เกม 6 คู่', check: (p) => Boolean(p.matchCleared) },
@@ -121,7 +165,7 @@ function createConfettiEngine() {
   }
 
   function burst(count = 55) {
-    const colors = ['#fb7185', '#fbbf24', '#f472b6', '#38bdf8', '#34d399', '#a78bfa', '#ffffff'];
+    const colors = ['#f97316', '#fb7185', '#22c55e', '#fbbf24', '#f472b6', '#38bdf8', '#a78bfa', '#ffffff'];
     const cx = canvas.width * 0.5;
     const cy = canvas.height * 0.42;
     for (let i = 0; i < count; i++) {
@@ -195,7 +239,7 @@ export function createLearningUI({
       localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
     } catch {}
     if (discoveryPillEl) {
-      discoveryPillEl.textContent = `${progress.discoveredOrgans.length}/3`;
+      discoveryPillEl.textContent = `${progress.discoveredOrgans.length}/${ORGANS.length}`;
     }
     checkBadges();
   }
@@ -270,7 +314,7 @@ export function createLearningUI({
       progress.discoveredOrgans.push(organId);
       saveProgress();
     } else if (discoveryPillEl) {
-      discoveryPillEl.textContent = `${progress.discoveredOrgans.length}/3`;
+      discoveryPillEl.textContent = `${progress.discoveredOrgans.length}/${ORGANS.length}`;
     }
   }
 
@@ -298,6 +342,9 @@ export function createLearningUI({
     if (fcScope === 'organ') {
       fcIndex = 0;
       fcFlipped = false;
+    }
+    if (quizScope === 'organ') {
+      startNewQuiz('organ');
     }
     updateDrawerHeader();
     if (isOpen) renderActiveTab();
@@ -851,30 +898,40 @@ export function createLearningUI({
   function renderCompareTab() {
     contentEl.innerHTML = `
       <div class="space-y-4 pb-6">
-        <!-- Crisp Scannable Comparison Grid -->
-        <div class="rounded-2xl border border-white/15 overflow-hidden bg-slate-950/70">
-          <table class="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr class="bg-white/[0.07] border-b border-white/10 text-[11px]">
-                <th class="p-2.5 text-slate-400 font-medium">หัวข้อ</th>
-                <th class="p-2.5 text-rose-300 font-bold">กระเพาะ</th>
-                <th class="p-2.5 text-amber-300 font-bold">ตับอ่อน</th>
-                <th class="p-2.5 text-pink-300 font-bold">ลำไส้เล็ก</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-white/10 text-[11px]">
-              ${QUICK_COMPARE.map(
-                (r) => `
-                <tr>
-                  <td class="p-2.5 font-semibold text-white whitespace-nowrap">${r.label}</td>
-                  <td class="p-2.5 text-slate-200">${r.stomach}</td>
-                  <td class="p-2.5 text-slate-200">${r.pancreas}</td>
-                  <td class="p-2.5 text-slate-200">${r.intestine}</td>
+        <!-- Crisp Scannable 5-Organ Comparison Grid (Horizontal scroll w/ sticky row labels) -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="font-bold text-white">ตารางเทียบทั้ง 5 อวัยวะ</span>
+            <span class="text-slate-400">เลื่อนซ้าย-ขวาได้ ↔</span>
+          </div>
+          <div class="rounded-2xl border border-white/15 overflow-x-auto custom-scroll bg-slate-950/70">
+            <table class="w-full min-w-[500px] text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-white/[0.07] border-b border-white/10 text-[11px]">
+                  <th class="sticky left-0 z-10 bg-slate-900/95 p-2.5 text-slate-400 font-medium border-r border-white/10 whitespace-nowrap">หัวข้อ</th>
+                  <th class="p-2.5 text-orange-300 font-bold whitespace-nowrap">ปาก</th>
+                  <th class="p-2.5 text-rose-300 font-bold whitespace-nowrap">กระเพาะ</th>
+                  <th class="p-2.5 text-emerald-300 font-bold whitespace-nowrap">ตับ</th>
+                  <th class="p-2.5 text-amber-300 font-bold whitespace-nowrap">ตับอ่อน</th>
+                  <th class="p-2.5 text-pink-300 font-bold whitespace-nowrap">ลำไส้เล็ก</th>
                 </tr>
-              `
-              ).join('')}
-            </tbody>
-          </table>
+              </thead>
+              <tbody class="divide-y divide-white/10 text-[11px]">
+                ${QUICK_COMPARE.map(
+                  (r) => `
+                  <tr>
+                    <td class="sticky left-0 z-10 bg-slate-950/95 p-2.5 font-semibold text-white whitespace-nowrap border-r border-white/10">${r.label}</td>
+                    <td class="p-2.5 text-slate-200">${r.mouth}</td>
+                    <td class="p-2.5 text-slate-200">${r.stomach}</td>
+                    <td class="p-2.5 text-slate-200">${r.liver}</td>
+                    <td class="p-2.5 text-slate-200">${r.pancreas}</td>
+                    <td class="p-2.5 text-slate-200">${r.intestine}</td>
+                  </tr>
+                `
+                ).join('')}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Instant-Read ❌ vs ✅ Exam Myth-Busters -->
@@ -1422,7 +1479,7 @@ export function createLearningUI({
   }
 
   if (discoveryPillEl) {
-    discoveryPillEl.textContent = `${progress.discoveredOrgans.length}/3`;
+    discoveryPillEl.textContent = `${progress.discoveredOrgans.length}/${ORGANS.length}`;
   }
 
   return {

@@ -302,11 +302,11 @@ const organStates = ORGANS.map((organ) => {
   gltfLoader.load(
     organ.glbUrl,
     (gltf) => {
-      const arNorm = normalizeModel(gltf.scene);
+      const arNorm = normalizeModel(gltf.scene, organ.modelRotation);
       arRig.attachNormalizedModel(arNorm.wrapper, arNorm.scale);
       callouts.forEach((c) => arNorm.wrapper.add(c.arAnchorObj));
 
-      const labNorm = normalizeModel(gltf.scene);
+      const labNorm = normalizeModel(gltf.scene, organ.modelRotation);
       labRig.attachNormalizedModel(labNorm.wrapper, labNorm.scale);
       callouts.forEach((c) => labNorm.wrapper.add(c.labAnchorObj));
 
@@ -434,7 +434,7 @@ function refreshStatusBanner() {
     setStatus(`${current.icon} ${current.name}`, 'ล็อกเป้า AR สำเร็จ • แตะป้ายชี้หรือเปิดคลังความรู้', 'bg-emerald-400');
     scannerOverlay.classList.add('hidden');
   } else {
-    setStatus('ระบบย่อยอาหาร AR', 'ส่องกล้องไปที่การ์ด (กระเพาะ / ตับอ่อน / ลำไส้เล็ก)', 'bg-sky-400 animate-pulse');
+    setStatus('ระบบย่อยอาหาร AR', 'ส่องกล้องไปที่การ์ด (ปาก / กระเพาะ / ตับ / ตับอ่อน / ลำไส้เล็ก)', 'bg-sky-400 animate-pulse');
     if (arStarted) scannerOverlay.classList.remove('hidden');
   }
 }
@@ -482,7 +482,7 @@ function ensureLabInitialized() {
   labControls.maxDistance = 3.2;
   labControls.target.set(0, 0.05, 0);
 
-  // Attach all 3 lab rigs
+  // Attach all 5 lab rigs
   organStates.forEach((st) => {
     labScene.add(st.labRig.root);
   });
@@ -664,9 +664,9 @@ function idbSet(key, val) {
 
 async function ensureCompiledMind() {
   if (compiledMindBlobUrl) return compiledMindBlobUrl;
-  setStatus('ระบบย่อยอาหาร AR', 'กำลังเตรียมฐานข้อมูลการ์ด 3 ใบ...', 'bg-amber-400 animate-pulse');
+  setStatus('ระบบย่อยอาหาร AR', 'กำลังเตรียมฐานข้อมูลการ์ด 5 ใบ...', 'bg-amber-400 animate-pulse');
 
-  const cached = await idbGet('digestive_mind_v3');
+  const cached = await idbGet('digestive_mind_v5');
   if (cached) {
     const blob = new Blob([cached], { type: 'application/octet-stream' });
     compiledMindBlobUrl = URL.createObjectURL(blob);
@@ -687,11 +687,11 @@ async function ensureCompiledMind() {
   const compiler = new Compiler();
   await compiler.compileImageTargets(imgs, (progress) => {
     const pct = Math.round(progress);
-    setStatus('ระบบย่อยอาหาร AR', `ประมวลผลลายนิ้วมือการ์ด 3 ใบ ${pct}%`, 'bg-amber-400 animate-pulse');
+    setStatus('ระบบย่อยอาหาร AR', `ประมวลผลลายนิ้วมือการ์ด 5 ใบ ${pct}%`, 'bg-amber-400 animate-pulse');
   });
 
   const buf = await compiler.exportData();
-  idbSet('digestive_mind_v3', buf);
+  idbSet('digestive_mind_v5', buf);
   const blob = new Blob([buf], { type: 'application/octet-stream' });
   compiledMindBlobUrl = URL.createObjectURL(blob);
   return compiledMindBlobUrl;
@@ -848,7 +848,7 @@ function setDigestionMode(active) {
   btnToggleDigestion.innerHTML = `${ICONS.wave}<span class="hidden sm:inline">${active ? 'ย่อย: เปิด' : 'จำลองย่อย'}</span>`;
   if (active) {
     soundEngine.playDigestStep();
-    showToast('อาหารและเอนไซม์กำลังวิ่งไปตามแนวท่อ 3D! (ผนังปรับโปร่งแสงอัตโนมัติ)');
+    showToast('อาหาร น้ำดี และเอนไซม์กำลังไหลตามแนว 3D! (ผนังปรับโปร่งแสงอัตโนมัติ)');
   }
 }
 

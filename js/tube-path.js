@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 
 /**
- * Exact Multi-Segment Geodesic 3D Tube Centerline Extractor & Stitcher (v3)
+ * Exact Multi-Segment Geodesic 3D Tube Centerline Extractor & Stitcher (v4 — 5 Organs)
  * Computes mathematically accurate centerlines directly from real GLB BufferGeometry:
  *  - Small Intestine: Extracts EVERY tubular segment across Duodenum (1), Jejunum (23),
  *    and Ileum (32), matches exact open end-ring seams via Kruskal + 2-Opt untangling,
  *    and chains all 56 coils (~600 waypoints) into ONE seamless anatomical spline!
  *  - Pancreas: Traces the exact main Pancreatic Duct (Wirsung) from Tail -> Head!
  *  - Stomach: Traces the exact curved J-shaped lumen from Cardiac -> Pyloric Sphincter!
+ *  - Mouth & Liver: Builds smooth centripetal Catmull-Rom trajectories from verified
+ *    anatomical waypoints (Mouth chewing/swallowing bolus over tongue -> pharynx;
+ *    Liver hepatic lobes -> gallbladder -> cystic & common bile duct)!
  *  - Caches extracted curves per organ so AR & 3D Lab rigs share computation instantly.
  */
 
