@@ -97,6 +97,15 @@ export const ORGANS = [
       'lower-gingiva-floor': new THREE.Vector3(0.0, -0.08, 0.01),
       mandible: new THREE.Vector3(0.0, -0.15, -0.02),
     },
+    explodeParts: [
+      { id: 'teeth', title: 'ฟัน', en: 'Teeth', desc: 'บดเคี้ยวอาหารเชิงกลเพิ่มพื้นที่ผิวให้เอนไซม์อะไมเลส', meshes: ['teeth'] },
+      { id: 'tongue', title: 'ลิ้น & ปุ่มรับรส', en: 'Tongue', desc: 'คลุกเคล้าอาหารกับน้ำลาย รับรส และปั้นเป็นก้อน Bolus', meshes: ['tongue', 'tongue-papillae'] },
+      { id: 'salivary', title: 'ต่อมน้ำลาย', en: 'Salivary Glands', desc: 'หลั่งน้ำลายและเอนไซม์อะไมเลสเริ่มย่อยแป้งเป็นมอลโทส', meshes: ['salivary-glands'] },
+      { id: 'pharynx', title: 'เพดานอ่อน & คอหอย', en: 'Soft Palate & Pharynx', desc: 'ปิดโพรงจมูกขณะกลืนและส่งอาหารลงสู่หลอดอาหาร', meshes: ['soft-palate-pharynx'] },
+      { id: 'upper-gum', title: 'เพดานแข็ง & เหงือกบน', en: 'Upper Palate & Gingiva', desc: 'ผนังด้านบนของช่องปากช่วยลิ้นบดคลุกเคล้าอาหาร', meshes: ['upper-gingiva-palate'] },
+      { id: 'lower-gum', title: 'พื้นปาก & เหงือกล่าง', en: 'Floor of Mouth', desc: 'รองรับตัวลิ้นและเป็นที่ตั้งของต่อมน้ำลายใต้ลิ้น', meshes: ['lower-gingiva-floor'] },
+      { id: 'mandible', title: 'ขากรรไกรล่าง', en: 'Mandible', desc: 'กระดูกขากรรไกรที่ขยับได้สำหรับแรงบดเคี้ยวอาหาร', meshes: ['mandible'] },
+    ],
     meshGlassOpacity: {
       'upper-gingiva-palate': 0.28,
       'lower-gingiva-floor': 0.3,
@@ -276,6 +285,9 @@ export const ORGANS = [
     explodeOffsets: {
       'human-stomach': new THREE.Vector3(0, 0, 0),
     },
+    explodeParts: [
+      { id: 'stomach', title: 'กระเพาะอาหาร (ชิ้นเดียว)', en: 'Human Stomach', desc: 'โมเดลนี้เป็นชิ้นเดียวต่อเนื่อง — แนะนำเปิดโหมดเอกซเรย์หรือจำลองย่อยเพื่อดูด้านใน', meshes: ['human-stomach'] },
+    ],
     histology: [
       {
         layer: 'ชั้นเยื่อเมือก (Mucosa)',
@@ -476,6 +488,15 @@ export const ORGANS = [
       'hepatic-veins': new THREE.Vector3(0.0, 0.12, -0.12),
       artery: new THREE.Vector3(0.11, -0.02, 0.08),
     },
+    explodeParts: [
+      { id: 'liver', title: 'เนื้อตับ', en: 'Liver Lobes', desc: 'ผลิตน้ำดี เก็บสะสมไกลโคเจน และกำจัดสารพิษในเลือด', meshes: ['liver'] },
+      { id: 'gallbladder', title: 'ถุงน้ำดี', en: 'Gallbladder', desc: 'กักเก็บและทำให้น้ำดีเข้มข้นขึ้น 5–10 เท่าก่อนปล่อย', meshes: ['gallbladder'] },
+      { id: 'cystic', title: 'ท่อถุงน้ำดี', en: 'Cystic Duct', desc: 'ท่อเชื่อมต่อให้น้ำดีไหลเข้า–ออกระหว่างถุงน้ำดีกับท่อน้ำดี', meshes: ['cystic'] },
+      { id: 'biliary', title: 'แขนงท่อน้ำดี', en: 'Biliary Tree', desc: 'รวบรวมน้ำดีจากกลีบตับส่งลงสู่ลำไส้เล็กส่วนต้น', meshes: ['biliary'] },
+      { id: 'portal', title: 'หลอดเลือดพอร์ทัล', en: 'Portal Vein', desc: 'นำเลือดอุดมสารอาหารจากลำไส้เล็กมาคัดกรองที่ตับ', meshes: ['portal'] },
+      { id: 'hepatic-veins', title: 'หลอดเลือดดำตับ', en: 'Hepatic Veins', desc: 'ลำเลียงเลือดที่กรองสะอาดแล้วกลับเข้าสู่หัวใจ', meshes: ['hepatic-veins'] },
+      { id: 'artery', title: 'หลอดเลือดแดงตับ', en: 'Hepatic Artery', desc: 'ส่งเลือดออกซิเจนสูงมาหล่อเลี้ยงเซลล์ตับ', meshes: ['artery'] },
+    ],
     meshGlassOpacity: {
       liver: 0.24,
       gallbladder: 0.62,
@@ -643,6 +664,11 @@ export const ORGANS = [
       'pancreatic-body-and-tail': new THREE.Vector3(0.13, 0.07, -0.03),
       'pancreatic-duct': new THREE.Vector3(0, 0.0, 0.14),
     },
+    explodeParts: [
+      { id: 'head', title: 'หัวตับอ่อน', en: 'Head of Pancreas', desc: 'วางชิดดูโอดีนัม เป็นจุดปล่อยน้ำย่อยและ NaHCO₃ เข้าลำไส้เล็ก', meshes: ['pancreatic-head'] },
+      { id: 'duct', title: 'ท่อตับอ่อน', en: 'Pancreatic Duct', desc: 'ท่อหลักลำเลียงเอนไซม์ 8 ชนิดจากเซลล์อะซินาร์สู่ดูโอดีนัม', meshes: ['pancreatic-duct'] },
+      { id: 'body-tail', title: 'ตัว & หางตับอ่อน', en: 'Body & Tail', desc: 'แหล่งสร้างเอนไซม์และฮอร์โมนอินซูลิน/กลูคากอน', meshes: ['pancreatic-body-and-tail'] },
+    ],
     histology: [
       {
         layer: 'เซลล์อะซินาร์ (Acinar Cells — 98%)',
@@ -893,6 +919,11 @@ export const ORGANS = [
       jejunum: new THREE.Vector3(0.06, 0.0, 0.09),
       ileum: new THREE.Vector3(-0.05, -0.14, 0.02),
     },
+    explodeParts: [
+      { id: 'duodenum', title: 'ดูโอดีนัม (ส่วนต้น)', en: 'Duodenum', desc: 'รับไคม์ น้ำดี และน้ำย่อยตับอ่อน เกิดการย่อยเข้มข้นที่สุด', meshes: ['duodenum'] },
+      { id: 'jejunum', title: 'เจจูนัม (ส่วนกลาง)', en: 'Jejunum', desc: 'ย่อยขั้นสุดท้ายด้วยเอนไซม์ 3 กลุ่มและดูดซึมสารอาหารหลัก', meshes: ['jejunum'] },
+      { id: 'ileum', title: 'ไอเลียม (ส่วนปลาย)', en: 'Ileum', desc: 'ดูดซึมวิตามิน B12 เกลือน้ำดี ก่อนส่งกากสู่ลำไส้ใหญ่', meshes: ['ileum'] },
+    ],
     histology: [
       {
         layer: 'วิลไล (Villi) & ไมโครวิลไล (Microvilli)',

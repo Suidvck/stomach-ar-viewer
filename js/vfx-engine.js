@@ -2,13 +2,16 @@ import * as THREE from 'three';
 import { buildOrganTubeCurve } from './tube-path.js';
 
 /**
- * Clean Medical 3D Organ Rig & Tube-Flow Animation Engine
- * Focused purely on the 3D organ itself (zero cluttered rings/cones/ambient sparks):
- *  - Exact Geodesic Mesh-Centerline Food Bolus & Enzyme Flow running inside EVERY coil/bend
+ * Clean Medical 3D Organ Rig & Tube-Flow + Side-by-Side Explode Lineup Engine
+ * Features:
+ *  - Exact Geodesic Mesh-Centerline Food Bolus, Bile & Enzyme Flow inside real organ coils/ducts
  *  - Smart Auto-Translucent Cutaway Wall when Digestion Flow is active in Realistic Mode
- *  - Subtle Peristalsis Contraction Rings hugging food boluses along the tube
- *  - Custom GLSL Fresnel Hologram & Medical X-Ray Shaders + Smooth Exploded View
- *  - Gentle organic breathing + elastic pop-in + clean hotspot pin highlight
+ *  - Two-Stage Explode -> Side-by-Side Horizontal Lineup Animation:
+ *      Phase 1: Parts separate outward from the assembled organ
+ *      Phase 2: Parts glide into a clean side-by-side horizontal gallery with balanced showcase sizing
+ *      Carousel Focus: Smoothly slides the lineup along X to center any selected part (works in 3D Lab & AR!)
+ *      In-Place Turntable: When Auto-Spin is on during Explode, each part rotates cleanly around its OWN center!
+ *  - Custom GLSL Fresnel Hologram & Medical X-Ray Shaders
  */
 
 let sharedGlowTex = null;
@@ -126,6 +129,14 @@ export function easeOutBack(x) {
   return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
 }
 
+function easeOutCubic(x) {
+  return 1 - Math.pow(1 - x, 3);
+}
+
+function easeInOutCubic(x) {
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+}
+
 export function normalizeModel(gltfScene, modelRotation = null) {
   const model = gltfScene.clone(true);
   const contentRoot = new THREE.Group();
@@ -149,7 +160,7 @@ export function normalizeModel(gltfScene, modelRotation = null) {
 }
 
 /**
- * Clean Organ 3D Rig — zero distracting surrounding rings/cones/sparkles.
+ * Clean Organ 3D Rig with Two-Stage Explode -> Side-by-Side Lineup & Mobile Carousel Focus.
  */
 export function createOrganVFXRig(organ) {
   const accent = new THREE.Color(organ.accentColor);
@@ -171,14 +182,14 @@ export function createOrganVFXRig(organ) {
   const foodBoluses = [];
   const enzymeSparks = [];
 
-  const colFoodStart = new THREE.Color('#fb923c'); // warm golden-orange bolus
-  const colFoodMid = new THREE.Color('#fde047');   // enzyme-mixed bright yellow chyme
-  const colFoodEnd = new THREE.Color('#34d399');   // digested nutrient emerald
-  const colMouthBolus = new THREE.Color('#fb923c');   // chewed food bolus
-  const colMouthMaltose = new THREE.Color('#fde047'); // starch -> maltose golden glow
-  const colMouthSaliva = new THREE.Color('#38bdf8');  // salivary amylase sparks
-  const colLiverBile = new THREE.Color('#22c55e');    // fresh hepatic bile emerald
-  const colLiverGold = new THREE.Color('#eab308');    // concentrated gallbladder bile gold
+  const colFoodStart = new THREE.Color('#fb923c');
+  const colFoodMid = new THREE.Color('#fde047');
+  const colFoodEnd = new THREE.Color('#34d399');
+  const colMouthBolus = new THREE.Color('#fb923c');
+  const colMouthMaltose = new THREE.Color('#fde047');
+  const colMouthSaliva = new THREE.Color('#38bdf8');
+  const colLiverBile = new THREE.Color('#22c55e');
+  const colLiverGold = new THREE.Color('#eab308');
   const colPancreasEnzyme = new THREE.Color('#fbbf24');
   const colPancreasDuct = new THREE.Color('#38bdf8');
   const tmpColor = new THREE.Color();
@@ -199,7 +210,6 @@ export function createOrganVFXRig(organ) {
     const isMouth = organ.id === 'mouth';
     const isLiver = organ.id === 'liver';
 
-    // Thin subtle centerline guide inside the real tube coils / cavity / biliary ducts
     const tubeSegments = isIntestine ? 520 : 84;
     const guideRadius = isIntestine
       ? 0.0036
@@ -229,7 +239,6 @@ export function createOrganVFXRig(organ) {
     flowGuideMesh.userData.isVFX = true;
     flowGroup.add(flowGuideMesh);
 
-    // Organic Food Boluses / Bile Droplets / Enzyme Pulses oriented along tangent
     const bolusCount = isIntestine ? 16 : isLiver ? 7 : isPancreas ? 6 : 5;
     const bolusGeo = isIntestine
       ? new THREE.CapsuleGeometry(0.014, 0.021, 8, 14)
@@ -332,7 +341,6 @@ export function createOrganVFXRig(organ) {
       });
     }
 
-    // Enzyme / Saliva / Bile micro-particles streaming tightly along the pathway
     const sparkCount = isIntestine ? 56 : isLiver ? 28 : 22;
     const sparkGeo = new THREE.OctahedronGeometry(isIntestine ? 0.0064 : 0.0085, 0);
     for (let i = 0; i < sparkCount; i++) {
@@ -371,13 +379,15 @@ export function createOrganVFXRig(organ) {
     }
   }
 
-  // Minimal Clean Hotspot Surface Marker (tiny glowing pin only when selected)
+  // Minimal Clean Hotspot Surface Marker (marked isVFX so Explode never treats it as an organ part!)
   const reticleGroup = new THREE.Group();
   reticleGroup.visible = false;
+  reticleGroup.userData.isVFX = true;
   const reticleCore = new THREE.Mesh(
     new THREE.SphereGeometry(0.016, 16, 16),
     new THREE.MeshBasicMaterial({ color: 0xffffff })
   );
+  reticleCore.userData.isVFX = true;
   const reticleHalo = new THREE.Sprite(
     new THREE.SpriteMaterial({
       map: getGlowTexture(),
@@ -389,15 +399,21 @@ export function createOrganVFXRig(organ) {
     })
   );
   reticleHalo.scale.setScalar(0.11);
+  reticleHalo.userData.isVFX = true;
   reticleGroup.add(reticleCore, reticleHalo);
 
-  // State tracked for meshes & visual modes
+  // State tracked for meshes, parts & explode lineup
   const meshEntries = [];
+  const partEntries = []; // { index, meta, pivot, entries, assembledPos, burstPos, lineupPos, gridPos, lineupScale, curScale, curRotY }
   let wrappedModel = null;
   let visualMode = 'realistic';
-  let explodeFactor = 0;
+  let explodeProgress = 0; // 0 = assembled, 0..0.34 = burst apart, 0.34..1 = side-by-side lineup
+  let focusedPartIndex = null; // null = Overview All, 0..N-1 = Centered Focused Part
+  let lineupShiftX = 0;
   let highlightedMeshName = null;
   let digestionActive = false;
+
+  const SLOT_SPACING = 0.45;
 
   function makeGlassMaterial(mat, opacity) {
     if (Array.isArray(mat)) {
@@ -411,7 +427,7 @@ export function createOrganVFXRig(organ) {
     return g;
   }
 
-  function attachNormalizedModel(wrapped, modelScale = 1) {
+  function attachNormalizedModel(wrapped) {
     wrappedModel = wrapped;
     wrapped.rotation.x = Math.PI / 2;
     modelHolder.add(wrapped);
@@ -420,11 +436,12 @@ export function createOrganVFXRig(organ) {
 
     const offsets = organ.explodeOffsets || {};
     const glassOpacity = organ.glassOpacity ?? 0.36;
-    const invScale = modelScale > 0 ? 1 / modelScale : 1;
 
-    wrapped.updateWorldMatrix(true, true);
-    const invWrapped = new THREE.Matrix4().copy(wrapped.matrixWorld).invert();
+    // 1. Build geodesic flow first while meshes are in pristine assembled state
+    buildDynamicTubeFlow(wrapped);
 
+    // 2. Collect all real meshes & compute their materials
+    const collectedMeshes = [];
     wrapped.traverse((obj) => {
       if (!obj.isMesh || obj.userData.isVFX) return;
       const origMat = obj.material;
@@ -432,7 +449,6 @@ export function createOrganVFXRig(organ) {
       const parentName = obj.parent?.name || '';
       const keyName = obj.name || matName || parentName || '';
 
-      // Smooth semi-translucent glass-flesh cutaway for Digestion Flow mode (supports per-mesh opacity)
       const meshOpacity =
         organ.meshGlassOpacity?.[obj.name] ??
         organ.meshGlassOpacity?.[matName] ??
@@ -453,21 +469,7 @@ export function createOrganVFXRig(organ) {
       wireMesh.userData.isVFX = true;
       obj.add(wireMesh);
 
-      const rawOffset = offsets[obj.name] || offsets[matName] || offsets[parentName] || null;
-      let explodeVec = new THREE.Vector3();
-      if (rawOffset) {
-        if (obj.parent) {
-          obj.parent.updateWorldMatrix(true, false);
-          const parentInWrapped = new THREE.Matrix4().multiplyMatrices(invWrapped, obj.parent.matrixWorld);
-          const wrappedToParent = parentInWrapped.clone().invert();
-          const linear3 = new THREE.Matrix3().setFromMatrix4(wrappedToParent);
-          explodeVec = rawOffset.clone().applyMatrix3(linear3);
-        } else {
-          explodeVec = rawOffset.clone().multiplyScalar(invScale);
-        }
-      }
-
-      meshEntries.push({
+      const entry = {
         mesh: obj,
         name: keyName,
         matName,
@@ -475,12 +477,138 @@ export function createOrganVFXRig(organ) {
         origMat,
         glassMat,
         wireMesh,
-        basePos: obj.position.clone(),
-        explodeVec,
+        partIndex: 0,
+      };
+      meshEntries.push(entry);
+      collectedMeshes.push(entry);
+    });
+
+    // 3. Build Per-Part Pivot Groups directly under `wrapped` (preserves exact assembled world transform!)
+    wrapped.updateWorldMatrix(true, true);
+    const invWrapped = new THREE.Matrix4().copy(wrapped.matrixWorld).invert();
+
+    const partDefs =
+      Array.isArray(organ.explodeParts) && organ.explodeParts.length > 0
+        ? organ.explodeParts
+        : collectedMeshes.map((e, idx) => ({
+            id: e.name || `part-${idx}`,
+            title: e.name || `ส่วนที่ ${idx + 1}`,
+            en: e.name || '',
+            desc: '',
+            meshes: [e.name],
+          }));
+
+    const assigned = new Set();
+    const matchedGroups = [];
+
+    partDefs.forEach((def) => {
+      const targetNames = new Set(def.meshes || []);
+      const groupEntries = collectedMeshes.filter(
+        (e) =>
+          !assigned.has(e) &&
+          (targetNames.has(e.mesh.name) || targetNames.has(e.matName) || targetNames.has(e.parentName))
+      );
+      if (groupEntries.length > 0) {
+        groupEntries.forEach((e) => assigned.add(e));
+        matchedGroups.push({ meta: def, entries: groupEntries });
+      }
+    });
+
+    // Catch any unmatched mesh cleanly into the last or its own group
+    collectedMeshes.forEach((e) => {
+      if (!assigned.has(e)) {
+        assigned.add(e);
+        matchedGroups.push({
+          meta: { id: e.name, title: e.name, en: e.name, desc: '', meshes: [e.name] },
+          entries: [e],
+        });
+      }
+    });
+
+    const numParts = matchedGroups.length;
+    const tmpBox = new THREE.Box3();
+    const tmpPt = new THREE.Vector3();
+
+    matchedGroups.forEach((grp, idx) => {
+      // Compute combined bounding box of this part's meshes in `wrapped` local space
+      tmpBox.makeEmpty();
+      grp.entries.forEach((e) => {
+        e.mesh.updateWorldMatrix(true, false);
+        const toWrapped = new THREE.Matrix4().multiplyMatrices(invWrapped, e.mesh.matrixWorld);
+        const posAttr = e.mesh.geometry.attributes.position;
+        for (let vi = 0; vi < posAttr.count; vi++) {
+          tmpPt.fromBufferAttribute(posAttr, vi).applyMatrix4(toWrapped);
+          tmpBox.expandByPoint(tmpPt);
+        }
+      });
+
+      const partCenter = tmpBox.isEmpty() ? new THREE.Vector3() : tmpBox.getCenter(new THREE.Vector3());
+      const partSize = tmpBox.isEmpty() ? new THREE.Vector3(0.3, 0.3, 0.3) : tmpBox.getSize(new THREE.Vector3());
+      const partMaxDim = Math.max(partSize.x, partSize.y, partSize.z) || 0.2;
+
+      // Create centered Pivot Group inside `wrapped` and attach meshes preserving exact world transform
+      const pivot = new THREE.Group();
+      pivot.name = `explode-part-${idx}`;
+      pivot.position.copy(partCenter);
+      wrapped.add(pivot);
+      pivot.updateWorldMatrix(true, false);
+
+      grp.entries.forEach((e) => {
+        e.partIndex = idx;
+        e.mesh.userData.explodePartIndex = idx;
+        pivot.attach(e.mesh);
+      });
+
+      // Phase 1 Burst target (uses curated explodeOffsets if available, or radial outward burst)
+      const firstEntry = grp.entries[0];
+      const rawOff =
+        offsets[firstEntry.mesh.name] ||
+        offsets[firstEntry.matName] ||
+        offsets[firstEntry.parentName] ||
+        null;
+      const burstVec = rawOff
+        ? rawOff.clone().multiplyScalar(1.35)
+        : partCenter.clone().normalize().multiplyScalar(0.18);
+      if (burstVec.lengthSq() < 0.001 && numParts > 1) {
+        burstVec.set((idx - (numParts - 1) / 2) * 0.14, 0.08, 0.06);
+      }
+      const burstPos = partCenter.clone().add(burstVec);
+
+      // Phase 2 Side-by-Side Lineup target (horizontal row along X, balanced showcase sizing!)
+      const slotX = numParts > 1 ? (idx - (numParts - 1) / 2) * SLOT_SPACING : 0;
+      const lineupPos = new THREE.Vector3(slotX, 0.02, 0);
+
+      // Compact 2-Row Portrait Shelf target (used ONLY in mobile portrait 'ดูรวม' overview when >= 5 parts)
+      let gridPos = lineupPos.clone();
+      if (numParts >= 5) {
+        const topCount = Math.ceil(numParts / 2);
+        const botCount = numParts - topCount;
+        const isTop = idx < topCount;
+        const col = isTop ? idx : idx - topCount;
+        const rowLen = isTop ? topCount : botCount;
+        const gx = (col - (rowLen - 1) / 2) * 0.44;
+        const gy = isTop ? 0.27 : -0.23;
+        gridPos = new THREE.Vector3(gx, gy, 0);
+      }
+
+      const lineupScale =
+        numParts > 1 ? THREE.MathUtils.clamp(0.36 / partMaxDim, 0.52, 2.05) : 1.0;
+
+      partEntries.push({
+        index: idx,
+        meta: grp.meta,
+        pivot,
+        entries: grp.entries,
+        assembledPos: partCenter.clone(),
+        burstPos,
+        lineupPos,
+        gridPos,
+        lineupScale,
+        curScale: 1,
+        curRotY: 0,
       });
     });
 
-    buildDynamicTubeFlow(wrapped);
     refreshMaterials();
   }
 
@@ -504,16 +632,39 @@ export function createOrganVFXRig(organ) {
 
   function applyVisualMode(mode) {
     visualMode = mode;
+    if (mode !== 'explode') {
+      focusedPartIndex = null;
+    }
     refreshMaterials();
+  }
+
+  function setFocusedExplodePart(partIdx) {
+    if (partIdx === null || partIdx === undefined || partEntries.length <= 1) {
+      focusedPartIndex = null;
+    } else {
+      focusedPartIndex = Math.max(0, Math.min(partEntries.length - 1, partIdx));
+    }
+  }
+
+  function getExplodeParts() {
+    return partEntries.map((p) => p.meta);
+  }
+
+  function getLineupHalfWidth(isPortrait = false) {
+    if (partEntries.length <= 1) return 0.4;
+    if (isPortrait && partEntries.length >= 5) {
+      const topCount = Math.ceil(partEntries.length / 2);
+      return ((topCount - 1) * 0.44) / 2 + 0.24;
+    }
+    return ((partEntries.length - 1) * SLOT_SPACING) / 2 + 0.24;
   }
 
   function setDigestionActive(active) {
     digestionActive = active;
-    flowGroup.visible = active;
+    flowGroup.visible = active && explodeProgress < 0.08;
     refreshMaterials();
   }
 
-  // Kept as a lightweight no-op hook for compatibility with pop replay / tour calls
   function triggerScanBurst() {}
 
   function highlightHotspot(annotation) {
@@ -541,9 +692,20 @@ export function createOrganVFXRig(organ) {
     holoShaderMat.uniforms.uTime.value = elapsed;
     xrayShaderMat.uniforms.uTime.value = elapsed;
 
-    // 1. Pop-in Elastic Scale + Subtle Organic Peristalsis Breathing
+    const isExploding = visualMode === 'explode';
+    const hasMultiPart = partEntries.length > 1;
+
+    // 1. Advance Two-Stage Explode Progress (0 -> 1 over ~1.05s; smooth faster reassembly 1 -> 0)
+    if (isExploding && hasMultiPart) {
+      explodeProgress = Math.min(1, explodeProgress + dt * 0.96);
+    } else {
+      explodeProgress = Math.max(0, explodeProgress - dt * 1.8);
+    }
+
+    // 2. Pop-in Elastic Scale + Organic Peristalsis Breathing (calmed cleanly during Explode Lineup)
     const popScale = Math.max(0.001, easeOutBack(popProgress));
-    const breathAmp = digestionActive ? 0.024 : 0.012;
+    const breathScale = 1 - Math.min(1, explodeProgress * 2.5);
+    const breathAmp = (digestionActive ? 0.024 : 0.012) * breathScale;
     const breathSpeed = digestionActive ? 4.0 : 2.1;
     const breathWave = Math.sin(elapsed * breathSpeed);
     const sx = popScale * (1 + breathWave * breathAmp);
@@ -551,43 +713,131 @@ export function createOrganVFXRig(organ) {
     const sz = popScale * (1 + Math.cos(elapsed * breathSpeed) * breathAmp * 0.5);
     modelHolder.scale.set(sx, sy, sz);
 
-    // Subtle calm float
-    modelHolder.position.z = Math.sin(elapsed * 1.9) * 0.012;
+    modelHolder.position.z = Math.sin(elapsed * 1.9) * 0.012 * (0.4 + 0.6 * breathScale);
 
-    if (autoSpin) {
+    // Rotation control:
+    //  - Normal modes: spin whole organ around vertical axis (local Z of modelHolder)
+    //  - Explode Lineup: smoothly unwind whole row to face front (0 rad) so parts never swing off-screen,
+    //    while each lined-up part spins cleanly in-place around its OWN vertical center!
+    if (explodeProgress > 0.02 && hasMultiPart) {
+      const wrappedAngle = Math.atan2(Math.sin(modelHolder.rotation.z), Math.cos(modelHolder.rotation.z));
+      modelHolder.rotation.z = wrappedAngle * Math.max(0, 1 - dt * 7.5);
+    } else if (autoSpin) {
       modelHolder.rotation.z += dt * 0.65;
     }
 
-    // 2. Smooth Explode Transition & Selected Sub-Mesh Glow
-    const targetExplode = visualMode === 'explode' ? 1 : 0;
-    explodeFactor += (targetExplode - explodeFactor) * Math.min(1, dt * 6.5);
+    // 3. Smooth Horizontal Carousel Shift (centers focused part right in front of mobile/AR view!)
+    const targetShiftX =
+      isExploding && hasMultiPart && focusedPartIndex !== null && partEntries[focusedPartIndex]
+        ? -partEntries[focusedPartIndex].lineupPos.x
+        : 0;
+    lineupShiftX += (targetShiftX - lineupShiftX) * Math.min(1, dt * 7.5);
 
-    const hasMultiPart = meshEntries.length > 1;
-    meshEntries.forEach((entry) => {
-      if (hasMultiPart && entry.explodeVec.lengthSq() > 0) {
-        entry.mesh.position.copy(entry.basePos).addScaledVector(entry.explodeVec, explodeFactor);
-      }
+    // 4. Two-Stage Part Positions, Balanced Scaling, Focus Pop & Individual Turntable Spin
+    const phase1Split = 0.34;
+    let p1 = 0;
+    let p2 = 0;
+    if (explodeProgress <= phase1Split) {
+      p1 = easeOutCubic(explodeProgress / phase1Split);
+      p2 = 0;
+    } else {
+      p1 = 1;
+      p2 = easeInOutCubic((explodeProgress - phase1Split) / (1 - phase1Split));
+    }
 
-      const activeMat = entry.mesh.material;
-      if ((visualMode === 'realistic' || visualMode === 'explode') && activeMat && !Array.isArray(activeMat) && 'emissive' in activeMat) {
-        const isHit =
-          highlightedMeshName &&
-          (entry.name === highlightedMeshName ||
-            entry.matName === highlightedMeshName ||
-            entry.parentName === highlightedMeshName);
-        if (isHit) {
-          activeMat.emissive.copy(accent);
-          activeMat.emissiveIntensity = 0.25 + Math.sin(elapsed * 4.5) * 0.14;
+    const usePortraitGrid =
+      isExploding &&
+      hasMultiPart &&
+      focusedPartIndex === null &&
+      partEntries.length >= 5 &&
+      window.innerWidth < window.innerHeight * 0.82;
+
+    const tmpTargetPos = new THREE.Vector3();
+
+    partEntries.forEach((part) => {
+      const isFocused = isExploding && hasMultiPart && focusedPartIndex === part.index;
+      const hasFocusOther = isExploding && hasMultiPart && focusedPartIndex !== null && !isFocused;
+
+      if (hasMultiPart && explodeProgress > 0.001) {
+        if (p2 <= 0) {
+          // Stage 1: Burst outward from assembled organ
+          part.pivot.position.lerpVectors(part.assembledPos, part.burstPos, p1);
         } else {
-          activeMat.emissiveIntensity *= 0.88;
+          // Stage 2: Glide smoothly from burst into side-by-side lineup (or compact 2-row shelf on portrait mobile overview!)
+          const destBase = usePortraitGrid ? part.gridPos : part.lineupPos;
+          tmpTargetPos.lerpVectors(part.burstPos, destBase, p2);
+          if (!usePortraitGrid) {
+            tmpTargetPos.x += lineupShiftX * p2;
+          }
+          if (isFocused) {
+            tmpTargetPos.z += 0.08 * p2;
+            tmpTargetPos.y += 0.02 * p2;
+          }
+          // Smoothly blend between overview grid <-> single-row carousel!
+          if (explodeProgress >= 0.99) {
+            part.pivot.position.lerp(tmpTargetPos, Math.min(1, dt * 9.5));
+          } else {
+            part.pivot.position.copy(tmpTargetPos);
+          }
         }
+
+        // Smooth balanced showcase scale + focused pop-up
+        const focusMult = isFocused ? 1.3 : hasFocusOther ? 0.78 : usePortraitGrid ? 0.92 : 1.0;
+        const targetScale = THREE.MathUtils.lerp(1.0, part.lineupScale * focusMult, p2);
+        part.curScale += (targetScale - part.curScale) * Math.min(1, dt * 8.5);
+        part.pivot.scale.setScalar(part.curScale);
+
+        // In-place turntable spin when lineup is active & autoSpin is ON
+        if (autoSpin && p2 > 0.25) {
+          part.curRotY += dt * (isFocused ? 0.78 : 0.45);
+          part.pivot.rotation.y = part.curRotY;
+        } else if (!isExploding) {
+          const a = Math.atan2(Math.sin(part.curRotY), Math.cos(part.curRotY));
+          part.curRotY = a * Math.max(0, 1 - dt * 10);
+          part.pivot.rotation.y = part.curRotY;
+        }
+      } else {
+        part.pivot.position.copy(part.assembledPos);
+        part.curScale = 1;
+        part.pivot.scale.setScalar(1);
+        part.curRotY = 0;
+        part.pivot.rotation.y = 0;
       }
+
+      // Emissive highlight for either Hotspot selection (normal) OR Focused Part (explode carousel)
+      part.entries.forEach((entry) => {
+        const activeMat = entry.mesh.material;
+        if (
+          (visualMode === 'realistic' || visualMode === 'explode') &&
+          activeMat &&
+          !Array.isArray(activeMat) &&
+          'emissive' in activeMat
+        ) {
+          const isHotspotHit =
+            !isExploding &&
+            highlightedMeshName &&
+            (entry.name === highlightedMeshName ||
+              entry.matName === highlightedMeshName ||
+              entry.parentName === highlightedMeshName);
+          if (isHotspotHit) {
+            activeMat.emissive.copy(accent);
+            activeMat.emissiveIntensity = 0.25 + Math.sin(elapsed * 4.5) * 0.14;
+          } else if (isFocused) {
+            activeMat.emissive.copy(accent);
+            activeMat.emissiveIntensity = 0.16 + Math.sin(elapsed * 3.8) * 0.07;
+          } else {
+            activeMat.emissiveIntensity *= 0.88;
+          }
+        }
+      });
     });
 
-    // 3. Tube-Centerline Food Bolus, Bile & Enzyme Flow Animation
-    if (digestionActive && flowCurve) {
+    // 5. Tube-Centerline Food Bolus, Bile & Enzyme Flow (cleanly paused while exploded into lineup)
+    const showFlowNow = digestionActive && flowCurve && explodeProgress < 0.08;
+    flowGroup.visible = Boolean(showFlowNow);
+    if (showFlowNow) {
       if (flowGuideMesh) {
-        flowGuideMesh.visible = explodeFactor < 0.15;
+        flowGuideMesh.visible = true;
       }
 
       const isPancreas = organ.id === 'pancreas';
@@ -655,8 +905,8 @@ export function createOrganVFXRig(organ) {
       });
     }
 
-    // 4. Subtle Hotspot Halo Pulse
-    if (reticleGroup.visible) {
+    // 6. Subtle Hotspot Halo Pulse (hidden while exploded into lineup)
+    if (reticleGroup.visible && !isExploding) {
       const rp = 0.95 + Math.sin(elapsed * 5) * 0.18;
       reticleHalo.scale.setScalar(0.11 * rp);
     }
@@ -667,6 +917,9 @@ export function createOrganVFXRig(organ) {
     modelHolder,
     attachNormalizedModel,
     applyVisualMode,
+    setFocusedExplodePart,
+    getExplodeParts,
+    getLineupHalfWidth,
     setDigestionActive,
     triggerScanBurst,
     highlightHotspot,

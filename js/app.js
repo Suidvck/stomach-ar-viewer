@@ -62,14 +62,27 @@ const btnRetryAr = document.getElementById('btn-retry-ar');
 const btnEnterLabFromError = document.getElementById('btn-enter-lab-error');
 const visualModeBtns = document.querySelectorAll('[data-vmode]');
 
+const explodeBar = document.getElementById('explode-bar');
+const explodePartCaption = document.getElementById('explode-part-caption');
+const explodePartPills = document.getElementById('explode-part-pills');
+const btnExplodeOverview = document.getElementById('btn-explode-overview');
+const btnExplodePrev = document.getElementById('btn-explode-prev');
+const btnExplodeNext = document.getElementById('btn-explode-next');
+const btnExplodeSpeak = document.getElementById('btn-explode-speak');
+
 // App State (Defaults: Guided Tour ON, Digestion Flow ON, Auto-Spin ON, Labels ON)
 let appMode = 'ar'; // 'ar' | 'lab'
 let activeOrganIndex = 0;
 let visualMode = 'realistic'; // 'realistic' | 'hologram' | 'xray' | 'explode'
+let focusedExplodePart = null; // null = Overview All, 0..N-1 = Centered Focused Part
 let autoSpin = true;
 let showLabels = true;
 let digestionActive = true;
 let selectedAnnotation = null;
+
+// Smooth Lab Camera Auto-Framing State (yields immediately to user drag/zoom!)
+let labCamGoalPos = null;
+let labCamGoalTarget = null;
 
 let compiledMindBlobUrl = null;
 let mindarThree = null;
@@ -322,6 +335,9 @@ const organStates = ORGANS.map((organ) => {
       if (appMode === 'lab' && organ.index === activeOrganIndex) {
         labRig.root.visible = true;
         labRig.triggerScanBurst();
+        if (visualMode === 'explode') {
+          syncExplodeLineupUI({ autoDefaultFocus: true });
+        }
       }
     },
     undefined,
@@ -341,6 +357,7 @@ function updateCallouts(camera, width, height, mode) {
   organStates.forEach((st) => {
     const isVisible =
       showLabels &&
+      visualMode !== 'explode' &&
       st.loaded &&
       (mode === 'ar' ? st.found : st.organ.index === activeOrganIndex);
 
@@ -478,9 +495,43 @@ function ensureLabInitialized() {
   labControls.enableDamping = true;
   labControls.dampingFactor = 0.06;
   labControls.enablePan = false;
-  labControls.minDistance = 0.95;
-  labControls.maxDistance = 3.2;
+  labControls.minDistance = 0.85;
+  labControls.maxDistance = 6.5;
   labControls.target.set(0, 0.05, 0);
+
+  // Immediately yield auto-camera tweening when user manually drags or pinches
+  labControls.addEventListener('start', () => {
+    labCamGoalPos = null;
+    labCamGoalTarget = null;
+  });
+
+  // Direct tap on any 3D lined-up part in Explode mode centers & highlights it!
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+  let downX = 0;
+  let downY = 0;
+  labRenderer.domElement.addEventListener('pointerdown', (e) => {
+    downX = e.clientX;
+    downY = e.clientY;
+  });
+  labRenderer.domElement.addEventListener('pointerup', (e) => {
+    if (visualMode !== 'explode' || appMode !== 'lab') return;
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 9) return;
+    const rect = labRenderer.domElement.getBoundingClientRect();
+    pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointerNdc, labCamera);
+    const activeRig = organStates[activeOrganIndex]?.labRig;
+    if (!activeRig) return;
+    const hits = raycaster.intersectObjects(activeRig.root.children, true);
+    for (const hit of hits) {
+      const idx = hit.object?.userData?.explodePartIndex;
+      if (typeof idx === 'number') {
+        setFocusedExplodePart(idx);
+        break;
+      }
+    }
+  });
 
   // Attach all 5 lab rigs
   organStates.forEach((st) => {
@@ -529,6 +580,16 @@ function startLabLoop() {
         });
       }
     });
+
+    if (labCamGoalPos && labCamGoalTarget) {
+      const alpha = Math.min(1, dt * 6.0);
+      labCamera.position.lerp(labCamGoalPos, alpha);
+      labControls.target.lerp(labCamGoalTarget, alpha);
+      if (labCamera.position.distanceTo(labCamGoalPos) < 0.015) {
+        labCamGoalPos = null;
+        labCamGoalTarget = null;
+      }
+    }
 
     labControls.update();
     labRenderer.render(labScene, labCamera);
@@ -591,7 +652,11 @@ function selectOrgan(idx, { switchToLabIfHidden = false } = {}) {
   learningUI.setOrgan(idx, { silent: true });
   renderLabOrganBar();
   refreshStatusBanner();
-  if (tourRunning) scheduleTourForActiveOrgan(900);
+  if (visualMode === 'explode') {
+    syncExplodeLineupUI({ autoDefaultFocus: true });
+  } else if (tourRunning) {
+    scheduleTourForActiveOrgan(900);
+  }
 }
 
 function switchMode(targetMode) {
@@ -755,7 +820,11 @@ async function startARMode() {
           learningUI.setOrgan(st.organ.index, { silent: true });
           refreshStatusBanner();
           showToast(`✨ ตรวจพบการ์ด: ${st.organ.name} (${st.organ.nameEn})`);
-          if (tourRunning) scheduleTourForActiveOrgan(900);
+          if (visualMode === 'explode') {
+            syncExplodeLineupUI({ autoDefaultFocus: true });
+          } else if (tourRunning) {
+            scheduleTourForActiveOrgan(900);
+          }
         };
 
         anchor.onTargetLost = () => {
@@ -815,6 +884,210 @@ async function startARMode() {
   }
 }
 
+/* ==================== SIDE-BY-SIDE EXPLODE CAROUSEL (MOBILE-FIRST) ==================== */
+function getActiveExplodeParts() {
+  const st = organStates[activeOrganIndex];
+  const rigParts = st?.labRig?.getExplodeParts?.();
+  if (rigParts && rigParts.length > 0) return rigParts;
+  return ORGANS[activeOrganIndex]?.explodeParts || [];
+}
+
+function frameLabCameraForExplode() {
+  if (!labCamera || !labControls || appMode !== 'lab') return;
+  if (visualMode !== 'explode') {
+    labCamGoalPos = new THREE.Vector3(0, 0.22, 1.85);
+    labCamGoalTarget = new THREE.Vector3(0, 0.05, 0);
+    return;
+  }
+
+  const parts = getActiveExplodeParts();
+  if (parts.length <= 1 || focusedExplodePart !== null) {
+    // Focused single part centered nicely with neighbors peeking visibly on left/right!
+    const isNarrow = window.innerWidth < 640;
+    labCamGoalPos = new THREE.Vector3(0, 0.16, isNarrow ? 1.85 : 1.5);
+    labCamGoalTarget = new THREE.Vector3(0, 0.04, 0);
+    return;
+  }
+
+  // Overview All: compute exact horizontal FOV distance so the ENTIRE lineup (or 2-row portrait shelf) fits cleanly
+  const isPortrait = window.innerWidth < window.innerHeight * 0.82;
+  const halfW = organStates[activeOrganIndex]?.labRig?.getLineupHalfWidth?.(isPortrait) || 1.2;
+  const vFovRad = THREE.MathUtils.degToRad(labCamera.fov);
+  const aspect = Math.max(0.42, labCamera.aspect || window.innerWidth / Math.max(1, window.innerHeight));
+  const hFovHalfTan = Math.tan(vFovRad / 2) * aspect;
+  const fitZ = THREE.MathUtils.clamp((halfW * 1.24) / Math.max(0.16, hFovHalfTan), 1.9, 6.2);
+  labCamGoalPos = new THREE.Vector3(0, 0.2, fitZ);
+  labCamGoalTarget = new THREE.Vector3(0, 0.02, 0);
+}
+
+function setFocusedExplodePart(partIdx, { silent = false } = {}) {
+  const parts = getActiveExplodeParts();
+  if (parts.length <= 1) {
+    focusedExplodePart = 0;
+  } else if (partIdx === null || partIdx === undefined) {
+    focusedExplodePart = null;
+  } else {
+    focusedExplodePart = ((partIdx % parts.length) + parts.length) % parts.length;
+  }
+
+  const st = organStates[activeOrganIndex];
+  st?.arRig?.setFocusedExplodePart(focusedExplodePart);
+  st?.labRig?.setFocusedExplodePart(focusedExplodePart);
+
+  if (!silent) soundEngine.playClick();
+  renderExplodeBar();
+  frameLabCameraForExplode();
+}
+
+function stepExplodePart(delta) {
+  const parts = getActiveExplodeParts();
+  if (parts.length <= 1) return;
+  if (focusedExplodePart === null) {
+    setFocusedExplodePart(delta > 0 ? 0 : parts.length - 1);
+  } else {
+    setFocusedExplodePart(focusedExplodePart + delta);
+  }
+}
+
+function renderExplodeBar() {
+  if (!explodeBar) return;
+  if (visualMode !== 'explode') {
+    explodeBar.classList.add('hidden');
+    return;
+  }
+
+  const organ = ORGANS[activeOrganIndex];
+  const parts = getActiveExplodeParts();
+  const isMulti = parts.length > 1;
+  explodeBar.classList.remove('hidden');
+
+  btnExplodeOverview.classList.toggle('hidden', !isMulti);
+  btnExplodePrev.classList.toggle('hidden', !isMulti);
+  btnExplodeNext.classList.toggle('hidden', !isMulti);
+
+  if (isMulti) {
+    const isOverview = focusedExplodePart === null;
+    btnExplodeOverview.textContent = `ดูรวม (${parts.length})`;
+    btnExplodeOverview.className = `shrink-0 px-2.5 h-8 rounded-full text-[11px] font-semibold border transition whitespace-nowrap ${
+      isOverview
+        ? 'text-white border-white/50 shadow'
+        : 'bg-white/5 border-white/15 text-slate-300 hover:bg-white/15'
+    }`;
+    btnExplodeOverview.style.background = isOverview ? organ.accentColor : '';
+    btnExplodeOverview.style.borderColor = isOverview ? organ.accentColor : '';
+  }
+
+  if (focusedExplodePart !== null && parts[focusedExplodePart]) {
+    const p = parts[focusedExplodePart];
+    const badge = isMulti ? `${focusedExplodePart + 1}/${parts.length}` : '1/1';
+    explodePartCaption.innerHTML = `<span class="inline-block px-1.5 py-0.5 rounded-md mr-1.5 text-[10px] font-bold text-slate-950" style="background:${organ.accentColor}">${badge}</span><b class="text-white">${p.title}</b> <span class="text-slate-400 text-[10px]">(${p.en})</span> — <span class="text-slate-200">${p.desc}</span>`;
+    btnExplodeSpeak.classList.remove('hidden');
+  } else {
+    explodePartCaption.innerHTML = `<span class="inline-block px-1.5 py-0.5 rounded-md mr-1.5 text-[10px] font-bold text-slate-950" style="background:${organ.accentColor}">เรียง ${parts.length} ชิ้น</span><b class="text-white">${organ.name}</b> — แตะชิ้นส่วน 3D หรือปุ่มด้านล่างเพื่อส่องทีละชิ้น`;
+    btnExplodeSpeak.classList.add('hidden');
+  }
+
+  // Render scrollable part pills [1..N] (Overview pill is pinned cleanly outside!)
+  explodePartPills.innerHTML = parts
+    .map((p, idx) => {
+      const active = focusedExplodePart === idx;
+      return `<button type="button" data-epart="${idx}" class="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium border transition whitespace-nowrap ${
+        active
+          ? 'text-white border-white/50 shadow'
+          : 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/15'
+      }" style="${active ? `background:rgba(${organ.accentRgb},0.38); border-color:${organ.accentColor};` : ''}">${idx + 1}. ${p.title}</button>`;
+    })
+    .join('');
+
+  explodePartPills.querySelectorAll('[data-epart]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setFocusedExplodePart(Number(btn.dataset.epart));
+    });
+  });
+
+  if (focusedExplodePart !== null) {
+    const activeBtn = explodePartPills.querySelector(`[data-epart="${focusedExplodePart}"]`);
+    activeBtn?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+}
+
+function syncExplodeLineupUI({ autoDefaultFocus = false } = {}) {
+  const parts = getActiveExplodeParts();
+  if (visualMode !== 'explode') {
+    focusedExplodePart = null;
+    organStates.forEach((st) => {
+      st.arRig.setFocusedExplodePart(null);
+      st.labRig.setFocusedExplodePart(null);
+    });
+    renderExplodeBar();
+    frameLabCameraForExplode();
+    return;
+  }
+
+  if (autoDefaultFocus) {
+    // On narrow portrait mobile, auto-focus Part 1 so it fills screen big & crisp with Part 2 beside it;
+    // on desktop/wide screens, default to full side-by-side overview!
+    const isNarrow = window.innerWidth < 640;
+    focusedExplodePart = parts.length <= 1 ? 0 : isNarrow ? 0 : null;
+  } else if (focusedExplodePart !== null && focusedExplodePart >= parts.length) {
+    focusedExplodePart = 0;
+  }
+
+  const st = organStates[activeOrganIndex];
+  st?.arRig?.setFocusedExplodePart(focusedExplodePart);
+  st?.labRig?.setFocusedExplodePart(focusedExplodePart);
+  renderExplodeBar();
+  frameLabCameraForExplode();
+}
+
+btnExplodeOverview?.addEventListener('click', () => setFocusedExplodePart(null));
+btnExplodePrev?.addEventListener('click', () => stepExplodePart(-1));
+btnExplodeNext?.addEventListener('click', () => stepExplodePart(1));
+btnExplodeSpeak?.addEventListener('click', () => {
+  const parts = getActiveExplodeParts();
+  const p = focusedExplodePart !== null ? parts[focusedExplodePart] : null;
+  if (!p) return;
+  if (soundEngine.speaking) {
+    soundEngine.stopSpeech();
+  } else {
+    soundEngine.speakThai(`${p.title}. ${p.desc}`);
+  }
+});
+
+// Touch swipe left/right on the Explode Bar for effortless 1-thumb mobile cycling
+let swipeStartX = 0;
+let swipeStartY = 0;
+explodeBar?.addEventListener(
+  'touchstart',
+  (e) => {
+    if (!e.touches?.length) return;
+    swipeStartX = e.touches[0].clientX;
+    swipeStartY = e.touches[0].clientY;
+  },
+  { passive: true }
+);
+explodeBar?.addEventListener(
+  'touchend',
+  (e) => {
+    if (visualMode !== 'explode' || !e.changedTouches?.length) return;
+    // Only trigger swipe when gesture isn't inside the scrollable pills container
+    if (e.target.closest?.('#explode-part-pills')) return;
+    const dx = e.changedTouches[0].clientX - swipeStartX;
+    const dy = e.changedTouches[0].clientY - swipeStartY;
+    if (Math.abs(dx) > 42 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      stepExplodePart(dx < 0 ? 1 : -1);
+    }
+  },
+  { passive: true }
+);
+
+// Desktop keyboard Left/Right arrow navigation while in Explode Lineup
+window.addEventListener('keydown', (e) => {
+  if (visualMode !== 'explode' || learningUI.isOpen()) return;
+  if (e.key === 'ArrowRight') stepExplodePart(1);
+  if (e.key === 'ArrowLeft') stepExplodePart(-1);
+});
+
 /* ==================== GLOBAL CONTROLS & EVENT WIRING ==================== */
 function setVisualMode(mode) {
   visualMode = mode;
@@ -829,11 +1102,19 @@ function setVisualMode(mode) {
     btn.classList.toggle('vmode-active', btn.dataset.vmode === mode);
   });
 
+  if (mode === 'explode') {
+    closeInfoCard();
+    hideAllCallouts();
+    syncExplodeLineupUI({ autoDefaultFocus: true });
+  } else {
+    syncExplodeLineupUI({ autoDefaultFocus: false });
+  }
+
   const labels = {
     realistic: 'โหมดปกติ (สมจริง)',
     hologram: 'โหมดโฮโลแกรม Sci-Fi ✨',
     xray: 'โหมดเอกซเรย์โปร่งแสง',
-    explode: 'โหมดแยกส่วนกายวิภาค',
+    explode: 'แยกส่วนและวางเรียงข้างๆ แล้ว! (แตะเลือกดูทีละชิ้นได้)',
   };
   showToast(labels[mode] || mode);
 }
@@ -902,8 +1183,8 @@ function scheduleTourForActiveOrgan(delayMs = 900) {
     const isOrganVisible = appMode === 'lab' || organStates[activeOrganIndex]?.found;
     if (!isOrganVisible) return;
 
-    // Pause stepping unobtrusively while user is reading inside the Learning Hub Drawer
-    if (learningUI.isOpen()) {
+    // Pause stepping unobtrusively while user is reading inside Learning Hub OR inspecting Explode Lineup
+    if (learningUI.isOpen() || visualMode === 'explode') {
       tourTimer = setTimeout(runStep, 2500);
       return;
     }
