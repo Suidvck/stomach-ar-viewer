@@ -62,13 +62,13 @@ const btnRetryAr = document.getElementById('btn-retry-ar');
 const btnEnterLabFromError = document.getElementById('btn-enter-lab-error');
 const visualModeBtns = document.querySelectorAll('[data-vmode]');
 
-// App State
+// App State (Defaults: Guided Tour ON, Digestion Flow ON, Auto-Spin ON, Labels ON)
 let appMode = 'ar'; // 'ar' | 'lab'
 let activeOrganIndex = 0;
 let visualMode = 'realistic'; // 'realistic' | 'hologram' | 'xray' | 'explode'
-let autoSpin = false;
+let autoSpin = true;
 let showLabels = true;
-let digestionActive = false;
+let digestionActive = true;
 let selectedAnnotation = null;
 
 let compiledMindBlobUrl = null;
@@ -591,12 +591,14 @@ function selectOrgan(idx, { switchToLabIfHidden = false } = {}) {
   learningUI.setOrgan(idx, { silent: true });
   renderLabOrganBar();
   refreshStatusBanner();
+  if (tourRunning) scheduleTourForActiveOrgan(900);
 }
 
 function switchMode(targetMode) {
   if (appMode === targetMode && (targetMode === 'lab' ? labRenderer : arStarted)) return;
   appMode = targetMode;
   soundEngine.playModeSwitch();
+  pauseTourTimer();
   closeInfoCard();
   hideAllCallouts();
 
@@ -620,7 +622,8 @@ function switchMode(targetMode) {
     st.popProgress = 0;
     st.labRig.triggerScanBurst();
     refreshStatusBanner();
-    showToast('🧊 เข้าสู่โหมดห้องแล็บ 3D — ลากหมุนและซูมสำรวจได้อิสระ!');
+    showToast('เข้าสู่โหมดห้องแล็บ 3D — ลากหมุนและซูมสำรวจได้อิสระ!');
+    if (tourRunning) scheduleTourForActiveOrgan(1100);
   } else {
     labContainer.classList.add('hidden');
     labOrganBar.classList.add('hidden');
@@ -752,11 +755,14 @@ async function startARMode() {
           learningUI.setOrgan(st.organ.index, { silent: true });
           refreshStatusBanner();
           showToast(`✨ ตรวจพบการ์ด: ${st.organ.name} (${st.organ.nameEn})`);
+          if (tourRunning) scheduleTourForActiveOrgan(900);
         };
 
         anchor.onTargetLost = () => {
           st.found = false;
           st.arRig.root.visible = false;
+          pauseTourTimer();
+          closeInfoCard();
           refreshStatusBanner();
         };
       });
@@ -860,35 +866,85 @@ btnPopReplay.addEventListener('click', () => {
   showToast('⚡ สแกนโฮโลแกรม + เล่นแอนิเมชันใหม่!');
 });
 
-/* ==================== CINEMATIC GUIDED 3D AUTO-TOUR ==================== */
-let tourRunning = false;
+/* ==================== CINEMATIC GUIDED 3D AUTO-TOUR (ON BY DEFAULT) ==================== */
+let tourRunning = true;
 let tourTimer = null;
 let tourStepIdx = 0;
 
-function stopGuidedTour({ silent = false } = {}) {
-  tourRunning = false;
+function pauseTourTimer() {
   if (tourTimer) {
     clearTimeout(tourTimer);
     tourTimer = null;
   }
+  soundEngine.stopSpeech();
+}
+
+function stopGuidedTour({ silent = false } = {}) {
+  tourRunning = false;
+  pauseTourTimer();
   btnGuidedTour.classList.remove('dock-btn-active');
   btnGuidedTour.innerHTML = `${ICONS.play}<span class="hidden sm:inline">ทัวร์นำชม</span>`;
-  soundEngine.stopSpeech();
+  setVisualMode('realistic');
+  closeInfoCard();
   if (!silent) showToast('หยุดโหมดทัวร์นำชมแล้ว');
 }
 
-function startGuidedTour() {
+function scheduleTourForActiveOrgan(delayMs = 900) {
+  pauseTourTimer();
+  if (!tourRunning) return;
+  tourStepIdx = 0;
+
+  const showcaseModes = ['realistic', 'realistic', 'hologram', 'xray'];
+
+  const runStep = () => {
+    if (!tourRunning) return;
+    // Only step when an organ is actively visible (3D Lab or AR target currently tracked)
+    const isOrganVisible = appMode === 'lab' || organStates[activeOrganIndex]?.found;
+    if (!isOrganVisible) return;
+
+    // Pause stepping unobtrusively while user is reading inside the Learning Hub Drawer
+    if (learningUI.isOpen()) {
+      tourTimer = setTimeout(runStep, 2500);
+      return;
+    }
+
+    const currentOrgan = ORGANS[activeOrganIndex];
+    const anns = currentOrgan.annotations;
+
+    if (tourStepIdx < anns.length) {
+      const ann = anns[tourStepIdx];
+      const nextMode = showcaseModes[tourStepIdx % showcaseModes.length];
+      if (visualMode !== nextMode) {
+        setVisualMode(nextMode);
+      }
+      openInfoCard(ann, currentOrgan);
+      soundEngine.speakThai(`${ann.title}. ${ann.desc}`);
+      showToast(`ทัวร์นำชม (${tourStepIdx + 1}/${anns.length}): ${ann.title}`);
+      tourStepIdx++;
+      tourTimer = setTimeout(runStep, 5200);
+    } else {
+      // Brief clean showcase in realistic mode showing food flowing through the tube, then loop
+      if (visualMode !== 'realistic') setVisualMode('realistic');
+      closeInfoCard();
+      tourStepIdx = 0;
+      tourTimer = setTimeout(runStep, 3600);
+    }
+  };
+
+  tourTimer = setTimeout(runStep, delayMs);
+}
+
+function toggleGuidedTour() {
   if (tourRunning) {
     stopGuidedTour();
     return;
   }
-  // If in AR mode without a card tracked yet, smoothly switch to 3D Lab so the user immediately sees the show!
+  // If user manually turns tour ON while AR has no card tracked yet, enter 3D Lab so they see it immediately
   if (appMode === 'ar' && !organStates.some((s) => s.found)) {
     switchMode('lab');
   }
 
   tourRunning = true;
-  tourStepIdx = 0;
   btnGuidedTour.classList.add('dock-btn-active');
   btnGuidedTour.innerHTML = `${ICONS.stop}<span class="hidden sm:inline">หยุดทัวร์</span>`;
 
@@ -902,42 +958,12 @@ function startGuidedTour() {
     btnToggleLabels.classList.add('dock-btn-active');
     btnToggleLabels.innerHTML = `${ICONS.pin}<span class="hidden sm:inline">ป้ายชี้</span>`;
   }
-  setDigestionMode(true);
+  if (!digestionActive) setDigestionMode(true);
 
-  const organ = ORGANS[activeOrganIndex];
-  const showcaseModes = ['realistic', 'hologram', 'explode', 'xray'];
-
-  const runStep = () => {
-    if (!tourRunning) return;
-    const currentOrgan = ORGANS[activeOrganIndex];
-    const anns = currentOrgan.annotations;
-
-    if (tourStepIdx < anns.length) {
-      const ann = anns[tourStepIdx];
-      const nextMode = showcaseModes[tourStepIdx % showcaseModes.length];
-      setVisualMode(nextMode);
-      organStates[activeOrganIndex].arRig.triggerScanBurst();
-      organStates[activeOrganIndex].labRig.triggerScanBurst();
-      openInfoCard(ann, currentOrgan);
-      soundEngine.speakThai(`${ann.title}. ${ann.desc}`);
-      showToast(`🎬 ทัวร์นำชม (${tourStepIdx + 1}/${anns.length}): ${ann.title}`);
-      tourStepIdx++;
-      tourTimer = setTimeout(runStep, 5200);
-    } else {
-      // Finish organ tour cleanly back in realistic mode with celebratory burst
-      setVisualMode('realistic');
-      closeInfoCard();
-      soundEngine.playAchievement();
-      learningUI.burstConfetti();
-      showToast(`✨ จบทัวร์นำชม${organ.name}แล้ว! ลองสลับอวัยวะหรือเล่นควิซดูได้เลย`);
-      stopGuidedTour({ silent: true });
-    }
-  };
-
-  runStep();
+  scheduleTourForActiveOrgan(200);
 }
 
-btnGuidedTour.addEventListener('click', startGuidedTour);
+btnGuidedTour.addEventListener('click', toggleGuidedTour);
 
 btnToggleDigestion.addEventListener('click', () => {
   setDigestionMode(!digestionActive);
